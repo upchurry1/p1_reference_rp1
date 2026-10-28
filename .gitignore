@@ -1,0 +1,29 @@
+# Local tools and credentials
+.vscode/
+.agents/
+.codex/
+.aws/
+.env
+.env.*
+!.env.example
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Training runs, checkpoints, exports and generated reports
+logs/
+outputs/
+*.log
+
+# Build artifacts and crash dumps
+build/
+dist/
+core
+core.*

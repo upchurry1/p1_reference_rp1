@@ -1,0 +1,42 @@
+{
+  "task": "UESTC-P1-Reference_RP1",
+  "reference_task": "RP1-Flat",
+  "source_root_at_copy": "/home/hr/桌面/robotparty/robolab",
+  "sources": [
+    {
+      "path": "robolab/tasks/direct/base/rp1_env_cfg.py",
+      "sha256": "634326e8f44f119a7aa67cc159637936e5481c478ef30f3e2c84f9d948677b0e"
+    },
+    {
+      "path": "robolab/tasks/direct/base/base_config.py",
+      "sha256": "79e5feac55d0a8851bbd07ad0200388af60c6913e38b20c16cde0af20d67f3e3"
+    },
+    {
+      "path": "robolab/tasks/direct/base/scene_cfg.py",
+      "sha256": "3530992966c76de7acf8332d36207c35548571c58e949dc9a55c1c566eb89d71"
+    },
+    {
+      "path": "robolab/tasks/direct/base/mdp/rewards.py",
+      "sha256": "68c573f0c58ee58da38c743c3c4a4b9e0ec0c71991fff1cdd59a73bc3eab0a79"
+    },
+    {
+      "path": "robolab/tasks/direct/base/mdp/observations.py",
+      "sha256": "9722894a177852ccfb8fca32dbbcc143dbc73bf737633782b4ac1dffa37bf1d3"
+    },
+    {
+      "path": "robolab/assets/robots/rp1_actuators.py",
+      "sha256": "205dacea618c55c0b12da6ce27bc7041a0e15156e8f860ed628d2e2d07c5a0d6"
+    },
+    {
+      "path": "robolab/assets/robots/roboparty.py",
+      "sha256": "4e5a4e0a62dc61952e8fcf371d304264849f5561073f4afc39252821bb6a8d77"
+    }
+  ],
+  "adaptations": [
+    "Existing P1 observations/actions/PPO and physical PD retained.",
+    "Zero delay, no encoder bias; joint friction 0.1/0.1/0.01; motor data intentionally unfilled.",
+    "P1 joint/body mapping; omit waist/arm-only rewards, retain ankle subset; foot offset 0.0408 m.",
+    "Torch tensors, CommandManager, per-group actuators, PhysX mass/inertia APIs.",
+    "Physical-step filtered normal/friction forces; fixed RP1 plane/commands/pushes; no curricula."
+  ]
+}
