@@ -127,7 +127,8 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
                 for name, bounds in ranges.items()
             }
             cfg["commands"]["base_velocity"].update(
-                class_type="UniformVelocityCommand", resampling_time_range=list(command.resampling_time_range),
+                class_type=type(env.command_manager.get_term("base_velocity")).__name__,
+                resampling_time_range=list(command.resampling_time_range),
                 rel_standing_envs=command.rel_standing_envs, rel_heading_envs=command.rel_heading_envs,
                 heading_command=command.heading_command, heading_control_stiffness=command.heading_control_stiffness,
             )

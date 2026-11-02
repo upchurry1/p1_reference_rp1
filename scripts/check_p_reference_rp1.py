@@ -49,6 +49,9 @@ from unitree_rl_lab.tasks.locomotion.robots.p_pace.velocity_env_cfg import KneeL
 from unitree_rl_lab.tasks.locomotion.robots.p_reference_rp1.agents import ReferenceRP1RunnerCfg
 from unitree_rl_lab.tasks.locomotion.robots.p_reference_rp1.contact import FEET
 from unitree_rl_lab.tasks.locomotion.robots.p_reference_rp1 import rewards
+from unitree_rl_lab.tasks.locomotion.robots.p_reference_rp1.low_speed import (
+    LowSpeedStepReward, LowSpeedVelocityCommand, track_low_speed_velocity,
+)
 from unitree_rl_lab.tasks.locomotion.robots.p_reference_rp1.velocity_env_cfg import (
     ReferenceRP1EnvCfg,
 )
@@ -91,11 +94,12 @@ def check_configuration():
     events_old.pop("push_robot")
     assert events_new == events_old
     command = cfg.commands.base_velocity
-    assert command.resampling_time_range == (10.0, 10.0) and command.rel_standing_envs == 0.2
+    assert command.resampling_time_range == (4.0, 8.0) and command.rel_standing_envs == 0.2
+    assert command.class_type is LowSpeedVelocityCommand and command.low_speed_probability == 0.75
     assert command.heading_command and command.rel_heading_envs == 1.0 and command.heading_control_stiffness == 0.5
     assert command.ranges.lin_vel_x == (-0.6, 1.0) and command.ranges.lin_vel_y == (-0.5, 0.5)
     assert command.ranges.ang_vel_z == (-1.57, 1.57)
-    assert cfg.events.push_robot.interval_range_s == (1.0, 3.0)
+    assert cfg.events.push_robot.interval_range_s == (5.0, 8.0)
     assert len(cfg.events.push_robot.params["velocity_range"]) == 6
     terrain = cfg.scene.terrain
     assert terrain.terrain_type == "plane" and terrain.terrain_generator is None
@@ -113,8 +117,153 @@ def check_configuration():
     assert agent.clip_actions == 1.0 and agent.policy.init_noise_std == 0.35
     assert agent.min_noise_std == 0.05 and agent.max_noise_std == 0.35
     assert agent.experiment_name == "uestc_p1_reference_rp1"
-    passed("observations/action configuration match KneeLift; RP1 terrain/commands/pushes and physical PD match the contract")
+    passed("observations/actions unchanged; low-speed command/push settings and physical PD match configuration")
     return cfg
+
+
+def check_low_speed_start(cfg):
+    sample_env = SimpleNamespace(num_envs=12000, device="cpu", step_dt=.02,
+        scene={"robot": SimpleNamespace(data=SimpleNamespace(heading_w=torch.zeros(12000)))})
+    command = LowSpeedVelocityCommand(cfg.commands.base_velocity.replace(debug_vis=False), sample_env)
+    command._resample_command(torch.arange(sample_env.num_envs))
+    command._update_command()
+    standing, slow = command.is_standing_env, command.is_low_speed_env
+    assert abs(float(standing.float().mean()) - .2) < .025
+    assert abs(float(slow.float().mean()) - .6) < .025
+    assert not command.command[standing].any()
+    assert not command.command[slow, 1:].any() and not command.is_heading_env[slow].any()
+    for lo, hi in zip((.05, .15, .25), (.15, .25, .4)):
+        fraction = ((command.command[:, 0] >= lo) & (command.command[:, 0] < hi) & slow).float().mean()
+        assert abs(float(fraction) - .2) < .025
+    untouched = command.command[10:].clone()
+    command._resample_command(torch.arange(10))
+    torch.testing.assert_close(command.command[10:], untouched)
+    passed("20/60/20 command mixture, balanced low-speed bins, zero standing/side/yaw, partial resampling")
+
+    class Scene(dict):
+        pass
+
+    n = 2
+    positions = torch.zeros(n, 2, 3)
+    positions[:, :, 2] = .0408
+    positions[:, 0, 1], positions[:, 1, 1] = .1, -.1
+    force = torch.zeros(n, 2, 3)
+    force[:, :, 2] = 100.
+    data = SimpleNamespace(
+        body_pos_w=positions, body_quat_w=torch.tensor([1., 0., 0., 0.]).repeat(n, 2, 1),
+        root_pos_w=torch.zeros(n, 3), root_quat_w=torch.tensor([1., 0., 0., 0.]).repeat(n, 1),
+        root_lin_vel_w=torch.zeros(n, 3), projected_gravity_b=torch.tensor([0., 0., -1.]).repeat(n, 1),
+        default_mass=torch.full((n, 2), 10.),
+    )
+    scene = Scene(robot=SimpleNamespace(data=data))
+    scene.env_origins = torch.zeros(n, 3)
+    scene.sensors = {"contact_forces": SimpleNamespace(data=SimpleNamespace(net_forces_w=force))}
+    target = torch.zeros(n, 3)
+    env = SimpleNamespace(scene=scene, num_envs=n, device="cpu", step_dt=.02,
+                          command_manager=SimpleNamespace(get_command=lambda name: target))
+    params = dict(asset_cfg=SceneEntityCfg("robot", body_ids=[0, 1]),
+                  sensor_cfg=SceneEntityCfg("contact_forces", body_ids=[0, 1]))
+    term = LowSpeedStepReward(SimpleNamespace(params=params), env)
+
+    def tick():
+        result = term(env, **params)
+        assert torch.isfinite(result).all()
+        return result
+
+    assert not tick().any()  # Standing.
+    target[:, 0] = .1
+    assert not tick().any()  # Planted knees/body motion earns no lift credit.
+    still = track_low_speed_velocity(env)
+    torch.testing.assert_close(still, torch.full((n,), .641180388), rtol=1e-5, atol=1e-6)
+    data.root_lin_vel_w[:, 0] = .1
+    torch.testing.assert_close(track_low_speed_velocity(env), torch.ones(n))
+    data.root_lin_vel_w.zero_()
+
+    force[:, 0, 2], force[:, 1, 2] = 20., 180.
+    assert (tick() > 0).all()  # Pre-takeoff unloading credit.
+    for _ in range(10):
+        assert not tick().any()  # No repeated reward for holding a lean.
+    force[:, 0, 2], force[:, 1, 2] = 0., 200.
+    positions[:, 0, 2] = .0558  # Real 15 mm sole clearance.
+    assert (tick() > 0).all()
+    for _ in range(4):
+        assert not tick().any()
+    # In-place landing must not count as a completed advancing step.
+    positions[:, 0, 2] = .0408
+    force[:, :, 2] = 100.
+    for _ in range(3):
+        assert not tick().any()
+    assert not term.completed_steps.any()
+    # A repeated failed attempt cannot refill its unloading/lift budget.
+    force[:, 0, 2], force[:, 1, 2] = 0., 200.
+    positions[:, 0, 2] = .0558
+    for _ in range(5):
+        assert not tick().any()
+    positions[:, 0, 0] += .02
+    data.root_pos_w[:, 0] += .01
+    positions[:, 0, 2] = .0408
+    force[:, :, 2] = 100.
+    landed = tick() + tick()
+    assert (landed > 0).all() and (term.completed_steps[:, 0] == 1).all()
+    assert (term.target_foot == 1).all()
+    # Lifting the same foot again cannot earn the next alternating-step credit.
+    force[:, 0, 2], force[:, 1, 2] = 0., 200.
+    positions[:, 0, 2] = .0558
+    for _ in range(5):
+        assert not tick().any()
+    before = term.completed_steps[1].clone()
+    term.reset(torch.tensor([0]))
+    assert not term.completed_steps[0].any()
+    torch.testing.assert_close(term.completed_steps[1], before)
+    term.reset()
+    force[:, :, 2] = 100.
+    positions[:, :, 2] = .0408
+    tick()
+    force[:, :, 2] = 0.
+    positions[:, :, 2] = .0708
+    for _ in range(5):
+        assert not tick().any()  # Two-foot flight is invalid.
+    force[:, :, 2] = 100.
+    positions[:, :, 2] = .0408
+    positions[:, :, 0] += .1
+    data.root_pos_w[:, 0] += .1
+    for _ in range(3):
+        tick()
+    assert not term.completed_steps.any()
+    # An airborne swing with only a weak floor graze by the other foot is not support.
+    term.reset()
+    tick()
+    force[:, 0, 2], force[:, 1, 2] = 0., 20.
+    positions[:, 0, 2] = .0558
+    for _ in range(5):
+        assert not tick().any()
+    force[:, :, 2] = 100.
+    positions[:, 0, 2] = .0408
+    positions[:, 0, 0] += .1
+    data.root_pos_w[:, 0] += .1
+    for _ in range(3):
+        tick()
+    assert not term.completed_steps.any()
+    # Holding a properly unloaded leg indefinitely neither pays nor counts at landing.
+    term.reset()
+    tick()
+    force[:, 0, 2], force[:, 1, 2] = 0., 200.
+    positions[:, 0, 2] = .0558
+    assert (tick() > 0).all()
+    for _ in range(65):
+        assert not tick().any()
+    force[:, :, 2] = 100.
+    positions[:, 0, 2] = .0408
+    positions[:, 0, 0] += .1
+    data.root_pos_w[:, 0] += .1
+    for _ in range(3):
+        tick()
+    assert not term.completed_steps.any()
+    target.zero_()
+    assert not tick().any() and (term.target_foot == -1).all()
+    target[:, 0] = .5
+    assert not tick().any()  # Additional start guidance is restricted to low speed.
+    passed("tight tracking; bounded unload/lift credit; no crouch/hold/in-place/repeated-foot/flight exploit; advancing landing, partial reset and zero-command gates")
 
 
 def check_actions_and_motor():
@@ -346,7 +495,7 @@ def check_simulation(cfg):
             assert base.cfg.commands.base_velocity.to_dict() == cfg_before
             assert base.cfg.events.push_robot.to_dict() == push_before
             assert "gait" not in base.reward_manager.active_terms
-            assert len(base.reward_manager.active_terms) == 32
+            assert len(base.reward_manager.active_terms) == 33
             command = base.command_manager.get_term("base_velocity")
             command.heading_target[:] = robot.data.heading_w + 1.0
             command.is_heading_env[:] = True
@@ -378,13 +527,15 @@ def check_simulation(cfg):
             assert exported["motor_reference"]["parameters_by_group"] == synthetic_parameters()
             assert exported["commands"]["base_velocity"]["heading_command"]
             assert P1_REFERENCE_MOTORS == ORIGINAL_MOTOR_PARAMETERS
-            passed(f"PhysX: {args.num_envs} envs, {args.steps} steps, 675/720 observations, 32 rewards, total forces, reset and export")
+            assert exported["commands"]["base_velocity"]["class_type"] == "LowSpeedVelocityCommand"
+            passed(f"PhysX: {args.num_envs} envs, {args.steps} steps, 675/720 observations, 33 rewards, total forces, reset and export")
         finally:
             env.close()
 
 
 try:
     cfg = check_configuration()
+    check_low_speed_start(cfg)
     check_actions_and_motor()
     check_reward_math()
     check_actuator_fast_path()

@@ -4,6 +4,7 @@
 from isaaclab.managers import RewardTermCfg as RewTerm, SceneEntityCfg
 from isaaclab.utils import configclass
 from . import rewards as mdp
+from .low_speed import LowSpeedStepReward, track_low_speed_velocity
 
 # The reference imports these unchanged Isaac Lab formulas through its mdp module.
 P1_BODY_NAMES = ('pelvis_link', 'left_hip_roll_link', 'left_hip_pitch_link', 'left_hip_yaw_link', 'left_knee_pitch_link', 'left_ankle_pitch_link', 'left_ankle_roll_link', 'right_hip_roll_link', 'right_hip_pitch_link', 'right_hip_yaw_link', 'right_knee_pitch_link', 'right_ankle_pitch_link', 'right_ankle_roll_link')
@@ -11,7 +12,17 @@ P1_BODY_NAMES = ('pelvis_link', 'left_hip_roll_link', 'left_hip_pitch_link', 'le
 
 @configclass
 class ReferenceRP1RewardsCfg:
-    track_lin_vel_xy_exp = RewTerm(func=mdp.track_lin_vel_xy_yaw_frame_exp, weight=1.0, params={"std": 0.5})
+    track_lin_vel_xy_exp = RewTerm(
+        func=track_low_speed_velocity, weight=2.0,
+        params={"std": 0.5, "low_speed_std": 0.15, "tight_speed": 0.3, "full_speed": 0.6},
+    )
+    low_speed_steps = RewTerm(
+        func=LowSpeedStepReward, weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=["left_ankle_roll_link", "right_ankle_roll_link"], preserve_order=True),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["left_ankle_roll_link", "right_ankle_roll_link"], preserve_order=True),
+        },
+    )
     track_ang_vel_z_exp = RewTerm(func=mdp.track_ang_vel_z_world_exp, weight=1.0, params={"std": 0.5})
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-0.2, params={})
     ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.1, params={})

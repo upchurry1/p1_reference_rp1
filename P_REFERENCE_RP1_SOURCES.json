@@ -37,6 +37,7 @@
     "Zero delay, no encoder bias; joint friction 0.1/0.1/0.01; motor data intentionally unfilled.",
     "P1 joint/body mapping; omit waist/arm-only rewards, retain ankle subset; foot offset 0.0408 m.",
     "Torch tensors, CommandManager, per-group actuators, PhysX mass/inertia APIs.",
-    "Physical-step filtered normal/friction forces; fixed RP1 plane/commands/pushes; no curricula."
+    "Physical-step filtered normal/friction forces; fixed plane; no curricula.",
+    "2026-10-28: low-speed command mixture, tighter velocity tracking, finite unloading/lift and alternating advancing-step credits, and gentler pushes for fine-tuning. Observations, actions and motors unchanged."
   ]
 }

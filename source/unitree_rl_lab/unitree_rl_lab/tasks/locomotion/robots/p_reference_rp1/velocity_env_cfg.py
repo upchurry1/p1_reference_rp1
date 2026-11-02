@@ -1,4 +1,4 @@
-"""UESTC P1 with RP1-Flat rewards, terrain, commands and pushes.
+"""UESTC P1 with RP1-Flat mechanics and low-speed start fine-tuning.
 
 Motor data must be supplied in p_reference_parameters.py before training.
 Observations and action arithmetic are shared with KneeLift.
@@ -27,12 +27,13 @@ from ..p_pace.velocity_env_cfg import EventCfg, KneeLiftActionsCfg, RobotEnvCfg,
 from .contact import configure_contacts
 from .rewards_cfg import P1_BODY_NAMES, ReferenceRP1RewardsCfg
 from .terrain import ReferencePlaneImporter
+from .low_speed import LowSpeedVelocityCommandCfg
 
 
 @configclass
 class ReferenceCommandsCfg:
-    base_velocity = mdp.UniformVelocityCommandCfg(
-        asset_name="robot", resampling_time_range=(10.0, 10.0), rel_standing_envs=0.2,
+    base_velocity = LowSpeedVelocityCommandCfg(
+        asset_name="robot", resampling_time_range=(4.0, 8.0), rel_standing_envs=0.2,
         rel_heading_envs=1.0, heading_command=True, heading_control_stiffness=0.5,
         debug_vis=True,
         ranges=mdp.UniformVelocityCommandCfg.Ranges(
@@ -53,10 +54,10 @@ class ReferenceActionsCfg(KneeLiftActionsCfg):
 @configclass
 class ReferenceEventsCfg(EventCfg):
     push_robot = EventTerm(
-        func=mdp.push_by_setting_velocity, mode="interval", interval_range_s=(1.0, 3.0),
+        func=mdp.push_by_setting_velocity, mode="interval", interval_range_s=(5.0, 8.0),
         params={"velocity_range": {
-            "x": (-0.5, 0.5), "y": (-0.5, 0.5), "z": (-0.2, 0.2),
-            "roll": (-0.52, 0.52), "pitch": (-0.52, 0.52), "yaw": (-0.78, 0.78),
+            "x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": (0.0, 0.0),
+            "roll": (0.0, 0.0), "pitch": (0.0, 0.0), "yaw": (-0.1, 0.1),
         }},
     )
 

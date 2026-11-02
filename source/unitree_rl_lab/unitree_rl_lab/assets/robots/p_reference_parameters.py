@@ -8,7 +8,7 @@
 # rated_velocity: 额定速度，rad/s
 
 P1_REFERENCE_MOTORS = {
-    # 髋关节 roll：X8-120，按用户提供的 48 V 产品参数表填写。
+    # 髋关节 roll：X8-120，按提供的 48 V 产品参数表填写。
     # RPM 按模组输出端转速换算为 rad/s，不再除以减速比 19.61。
     "hip_roll": {
         "armature": 0.057682815,         # 转子侧惯量折算：1.5 × 1e-4 × 19.61²，kg·m²
@@ -27,7 +27,7 @@ P1_REFERENCE_MOTORS = {
         "rated_effort": 43.0,
         "rated_velocity": 13.29940890,
     },
-    # 髋关节 yaw：X6-60，按用户提供的 48 V 产品参数表填写。
+    # 髋关节 yaw：X6-60，按 48 V 产品参数表填写。
     "hip_yaw": {
         "armature": 0.025385615904,      # 沿用转子侧折算：0.66 × 1e-4 × 19.612²，kg·m²
         "effort_limit": 60.0,           # 峰值力矩，N·m
